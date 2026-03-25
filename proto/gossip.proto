@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package gossip;
+
+service Gossip {
+    rpc gossip (GossipRequest) returns (GossipReply);
+}
+
+message GossipRequest {
+    string nodeId = 1;
+    string address = 2;
+}
+
+message GossipReply {
+    // A map of node IDs to their addresses
+    map<string, string> peers = 1;
+}
