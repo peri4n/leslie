@@ -50,6 +50,14 @@ impl Gossip for Leslie {
         &self,
         request: Request<GossipRequest>,
     ) -> Result<Response<GossipReply>, Status> {
+        // Simple metric: count gossip requests
+        let meter = opentelemetry::global::meter("leslie");
+        let counter = meter
+            .u64_counter("gossip_requests_total")
+            .with_description("total gossip RPCs")
+            .init();
+        counter.add(1, &[]);
+
         info!("Received gossip request: {:?}", request);
         let incoming = request.into_inner();
         if !incoming.node_id.is_empty() && !incoming.address.is_empty() {

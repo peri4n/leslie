@@ -1,8 +1,10 @@
 use clap::Parser;
-use tracing::info;
 use std::sync::Arc;
 use tokio::time::Duration;
 use tonic::{Request, transport::Server};
+use tracing::info;
+mod otel;
+use crate::otel::init_metrics;
 
 use crate::cli::Args;
 use crate::gossiper::Gossiper;
@@ -17,9 +19,10 @@ pub mod leslie;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // init logs and metrics
     tracing_subscriber::fmt::init();
-
     let args = Args::parse();
+    init_metrics(&args.id)?;
 
     let leslie = Arc::new(Leslie::new(args.id.clone()));
 
@@ -45,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(GossipServer::from_arc(leslie))
         .serve_with_shutdown(addr, shutdown_signal())
         .await?;
+
     Ok(())
 }
 
@@ -82,7 +86,7 @@ pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String)
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         let mut term = signal(SignalKind::terminate()).expect("sigterm");
         let mut int = signal(SignalKind::interrupt()).expect("sigint");
         tokio::select! {

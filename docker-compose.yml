@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   # Shared defaults for all leslie nodes
-  x-leslie-common: &leslie-common
+  x-node-common: &node-common
     build: .
     environment:
       RUST_LOG: info
@@ -10,58 +10,76 @@ services:
     init: true
     restart: unless-stopped
 
-  node1:
-    <<: *leslie-common
-    container_name: leslie-node1
-    command: ["--id", "node1", "--hostname", "172.28.0.11", "--port", "50051"]
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
     networks:
       leslie:
-        ipv4_address: 172.28.0.11
+
+  node1:
+    <<: *node-common
+    command: ["--id", "node1", "--port", "50051"]
+    environment:
+      PROMETHEUS_BIND: 0.0.0.0:9464
+    networks:
+      leslie:
     ports:
       - "50051:50051"
+      - "9141:9464"   # host:container for node1 metrics
 
   node2:
-    <<: *leslie-common
-    container_name: leslie-node2
-    command: ["--id", "node2", "--hostname", "172.28.0.12", "--port", "50052", "--connect", "node1:50051"]
+    <<: *node-common
+    command: ["--id", "node2", "--port", "50052", "--connect", "node1:50051"]
+    environment:
+      PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
       leslie:
-        ipv4_address: 172.28.0.12
     ports:
       - "50052:50052"
+      - "9142:9464"
     depends_on: [node1]
 
   node3:
-    <<: *leslie-common
-    container_name: leslie-node3
-    command: ["--id", "node3", "--hostname", "172.28.0.13", "--port", "50053", "--connect", "node1:50051"]
+    <<: *node-common
+    command: ["--id", "node3", "--port", "50053", "--connect", "node1:50051"]
+    environment:
+      PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
       leslie:
-        ipv4_address: 172.28.0.13
     ports:
       - "50053:50053"
+      - "9143:9464"
     depends_on: [node1]
 
   node4:
-    <<: *leslie-common
-    container_name: leslie-node4
-    command: ["--id", "node4", "--hostname", "172.28.0.14", "--port", "50054", "--connect", "node1:50051"]
+    <<: *node-common
+    command: ["--id", "node4", "--port", "50054", "--connect", "node1:50051"]
+    environment:
+      PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
       leslie:
-        ipv4_address: 172.28.0.14
     ports:
       - "50054:50054"
+      - "9144:9464"
     depends_on: [node1]
 
   node5:
-    <<: *leslie-common
-    container_name: leslie-node5
-    command: ["--id", "node5", "--hostname", "172.28.0.15", "--port", "50055", "--connect", "node1:50051"]
+    <<: *node-common
+    command: ["--id", "node5", "--port", "50055", "--connect", "node1:50051"]
+    environment:
+      PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
       leslie:
-        ipv4_address: 172.28.0.15
     ports:
       - "50055:50055"
+      - "9145:9464"
     depends_on: [node1]
 
 networks:

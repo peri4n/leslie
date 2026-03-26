@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'leslie-nodes'
+    static_configs:
+      - targets:
+          - 'node1:9464'
+          - 'node2:9464'
+          - 'node3:9464'
+          - 'node4:9464'
+          - 'node5:9464'

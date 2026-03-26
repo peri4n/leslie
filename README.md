@@ -46,7 +46,6 @@ RUST_LOG=info cargo run -- --id node2 --hostname 127.0.0.1 --port 50052 --connec
 ## Roadmap
 
 - [ ] Gossip
-- [ ] Tracing
+- [ ] Tracing (removed for now; focusing on Prometheus metrics)
 - [ ] Heart Bleed
 - [ ] Leader election
-

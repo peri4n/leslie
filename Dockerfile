@@ -27,8 +27,10 @@ RUN apt-get update \
 
 COPY --from=builder /app/target/release/leslie /usr/local/bin/leslie
 
-EXPOSE 50051
+# gRPC + Prometheus metrics
+EXPOSE 50051 9464
 
 ENV RUST_LOG=info
+ENV PROMETHEUS_BIND=0.0.0.0:9464
 
 ENTRYPOINT ["/usr/local/bin/leslie"]
