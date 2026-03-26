@@ -1,8 +1,8 @@
 use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc};
 use tokio::sync::RwLock;
 
-use log::info;
 use tonic::{Request, Response, Status};
+use tracing::info;
 
 use crate::leslie::gossip::{GossipReply, GossipRequest, gossip_server::Gossip};
 

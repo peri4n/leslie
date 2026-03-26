@@ -1,6 +1,5 @@
-use ::log::info;
-use std::io::Write;
 use clap::Parser;
+use tracing::info;
 use std::sync::Arc;
 use tokio::time::Duration;
 use tonic::{Request, transport::Server};
@@ -18,7 +17,7 @@ pub mod leslie;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logging();
+    tracing_subscriber::fmt::init();
 
     let args = Args::parse();
 
@@ -47,17 +46,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve(addr)
         .await?;
     Ok(())
-}
-
-fn init_logging() {
-    let env = env_logger::Env::default().default_filter_or("info");
-    let mut builder = env_logger::Builder::from_env(env);
-    builder.format(|buf, record| {
-        let ts = buf.timestamp_millis();
-        let pid = std::process::id();
-        writeln!(buf, "[{} {} pid={}] {}", ts, record.level(), pid, record.args())
-    });
-    builder.init();
 }
 
 pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String) {

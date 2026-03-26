@@ -49,6 +49,7 @@
           just
           # grpc
           protobuf
+          bacon
         ];
 
         shellHook = ''
