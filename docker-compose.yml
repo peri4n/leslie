@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  # Shared defaults for all leslie nodes
+  x-leslie-common: &leslie-common
+    build: .
+    environment:
+      RUST_LOG: info
+    stop_grace_period: 30s
+    init: true
+    restart: unless-stopped
+
+  node1:
+    <<: *leslie-common
+    container_name: leslie-node1
+    command: ["--id", "node1", "--hostname", "172.28.0.11", "--port", "50051"]
+    networks:
+      leslie:
+        ipv4_address: 172.28.0.11
+    ports:
+      - "50051:50051"
+
+  node2:
+    <<: *leslie-common
+    container_name: leslie-node2
+    command: ["--id", "node2", "--hostname", "172.28.0.12", "--port", "50052", "--connect", "node1:50051"]
+    networks:
+      leslie:
+        ipv4_address: 172.28.0.12
+    ports:
+      - "50052:50052"
+    depends_on: [node1]
+
+  node3:
+    <<: *leslie-common
+    container_name: leslie-node3
+    command: ["--id", "node3", "--hostname", "172.28.0.13", "--port", "50053", "--connect", "node1:50051"]
+    networks:
+      leslie:
+        ipv4_address: 172.28.0.13
+    ports:
+      - "50053:50053"
+    depends_on: [node1]
+
+  node4:
+    <<: *leslie-common
+    container_name: leslie-node4
+    command: ["--id", "node4", "--hostname", "172.28.0.14", "--port", "50054", "--connect", "node1:50051"]
+    networks:
+      leslie:
+        ipv4_address: 172.28.0.14
+    ports:
+      - "50054:50054"
+    depends_on: [node1]
+
+  node5:
+    <<: *leslie-common
+    container_name: leslie-node5
+    command: ["--id", "node5", "--hostname", "172.28.0.15", "--port", "50055", "--connect", "node1:50051"]
+    networks:
+      leslie:
+        ipv4_address: 172.28.0.15
+    ports:
+      - "50055:50055"
+    depends_on: [node1]
+
+networks:
+  leslie:
+    name: leslie
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

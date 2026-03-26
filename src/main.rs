@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(GossipServer::from_arc(leslie))
-        .serve(addr)
+        .serve_with_shutdown(addr, shutdown_signal())
         .await?;
     Ok(())
 }
@@ -77,4 +77,19 @@ pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String)
             }
         }
     });
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate()).expect("sigterm");
+        let mut int = signal(SignalKind::interrupt()).expect("sigint");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = term.recv() => {},
+            _ = int.recv() => {},
+        }
+    }
+    info!("shutdown signal received");
 }
