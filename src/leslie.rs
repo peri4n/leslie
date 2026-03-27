@@ -1,4 +1,5 @@
 use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc};
+use prometheus::Registry;
 use tokio::sync::RwLock;
 
 use tonic::{Request, Response, Status};
@@ -12,13 +13,16 @@ pub mod gossip {
 }
 
 /// State of every Leslie node
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Leslie {
     /// id of this node
     pub node_id: String,
 
     /// peers of the node, mapping node_id to address
     pub peers: Arc<RwLock<HashMap<String, SocketAddr>>>,
+
+    /// Prometheus registry used for metrics
+    pub registry: Registry,
 }
 
 impl Leslie {
@@ -26,6 +30,7 @@ impl Leslie {
         Leslie {
             node_id,
             peers: Arc::new(RwLock::new(HashMap::new())),
+            registry: Registry::new(),
         }
     }
     pub async fn add_peer(&self, node_id: String, address: SocketAddr) {

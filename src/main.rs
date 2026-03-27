@@ -4,7 +4,7 @@ use tokio::time::Duration;
 use tonic::{Request, transport::Server};
 use tracing::info;
 mod otel;
-use crate::otel::init_metrics;
+use crate::otel::init_otel;
 
 use crate::cli::Args;
 use crate::gossiper::Gossiper;
@@ -22,9 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init logs and metrics
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    init_metrics(&args.id)?;
-
     let leslie = Arc::new(Leslie::new(args.id.clone()));
+    init_otel(&leslie)?;
+
 
     let addr = format!("{}:{}", args.hostname, args.port).parse()?;
     info!("Starting node {} on {:?}", leslie.node_id, addr);
