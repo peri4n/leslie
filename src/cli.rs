@@ -16,4 +16,3 @@ pub struct Args {
     #[arg(short, long, default_value = "0")]
     pub port: u16,
 }
-

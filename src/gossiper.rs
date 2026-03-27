@@ -1,25 +1,25 @@
-use std::future::Future;
-use std::sync::Arc;
-use crate::leslie::gossip::gossip_client::GossipClient;
 use crate::leslie::gossip::GossipRequest;
-use tonic::Request;
-use tracing::info;
+use crate::leslie::gossip::gossip_client::GossipClient;
+use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::time::{Duration, Interval, interval};
+use tonic::Request;
+use tracing::info;
 
-use crate::leslie::Leslie;
+use crate::leslie::AppState;
 
 // Periodic reporter as a Future
 pub struct Gossiper {
-    leslie: Arc<Leslie>,
+    leslie: Arc<AppState>,
     self_id: String,
     self_addr: String,
     tick: Interval,
 }
 
 impl Gossiper {
-    pub fn new(leslie: Arc<Leslie>, self_id: String, self_addr: String, every: Duration) -> Self {
+    pub fn new(leslie: Arc<AppState>, self_id: String, self_addr: String, every: Duration) -> Self {
         Gossiper {
             leslie,
             self_id,
@@ -37,7 +37,7 @@ impl Future for Gossiper {
             let id = self.self_id.clone();
             let self_addr = self.self_addr.clone();
             tokio::spawn(async move {
-                let peer_addrs = leslie.list_addresses().await;
+                let peer_addrs = leslie.cluster.list_addresses().await;
                 if peer_addrs.is_empty() {
                     return;
                 }
@@ -56,8 +56,9 @@ impl Future for Gossiper {
                                 Ok(resp) => {
                                     let reply = resp.into_inner();
                                     for (pid, paddr) in reply.peers {
-                                        let response_addr = paddr.parse().expect("Unable to parse addr");
-                                        leslie.add_peer(pid, response_addr).await;
+                                        let response_addr =
+                                            paddr.parse().expect("Unable to parse addr");
+                                        leslie.cluster.add_peer(pid, response_addr).await;
                                     }
                                 }
                                 Err(e) => {

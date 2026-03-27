@@ -1,5 +1,9 @@
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc};
 use prometheus::Registry;
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+};
 use tokio::sync::RwLock;
 
 use tonic::{Request, Response, Status};
@@ -7,32 +11,35 @@ use tracing::info;
 
 use crate::leslie::gossip::{GossipReply, GossipRequest, gossip_server::Gossip};
 
-
 pub mod gossip {
     tonic::include_proto!("gossip");
 }
 
-/// State of every Leslie node
+/// Identity (immutable) state
 #[derive(Debug, Clone)]
-pub struct Leslie {
-    /// id of this node
+pub struct IdentityState {
     pub node_id: String,
-
-    /// peers of the node, mapping node_id to address
-    pub peers: Arc<RwLock<HashMap<String, SocketAddr>>>,
-
-    /// Prometheus registry used for metrics
-    pub registry: Registry,
 }
 
-impl Leslie {
+impl IdentityState {
     pub fn new(node_id: String) -> Self {
-        Leslie {
-            node_id,
+        Self { node_id }
+    }
+}
+
+/// Cluster membership and peer data
+#[derive(Debug, Clone)]
+pub struct ClusterState {
+    pub peers: Arc<RwLock<HashMap<String, SocketAddr>>>,
+}
+
+impl ClusterState {
+    pub fn new() -> Self {
+        Self {
             peers: Arc::new(RwLock::new(HashMap::new())),
-            registry: Registry::new(),
         }
     }
+
     pub async fn add_peer(&self, node_id: String, address: SocketAddr) {
         self.peers.write().await.insert(node_id, address);
     }
@@ -49,8 +56,30 @@ impl Leslie {
     }
 }
 
+/// Metrics/observability state
+#[derive(Debug, Clone)]
+pub struct MetricsState {
+    pub registry: Registry,
+}
+
+impl MetricsState {
+    pub fn new() -> Self {
+        Self {
+            registry: Registry::new(),
+        }
+    }
+}
+
+/// Top-level application state holding Arcs to sub-states
+#[derive(Debug, Clone)]
+pub struct AppState {
+    pub identity: Arc<IdentityState>,
+    pub cluster: Arc<ClusterState>,
+    pub metrics: Arc<MetricsState>,
+}
+
 #[tonic::async_trait]
-impl Gossip for Leslie {
+impl Gossip for AppState {
     async fn gossip(
         &self,
         request: Request<GossipRequest>,
@@ -70,9 +99,9 @@ impl Gossip for Leslie {
                 .address
                 .parse()
                 .map_err(|e| Status::invalid_argument(format!("Invalid address: {}", e)))?;
-            self.add_peer(incoming.node_id, addr).await;
+            self.cluster.add_peer(incoming.node_id, addr).await;
         }
-        let peers = self.snapshot_peers().await;
+        let peers = self.cluster.snapshot_peers().await;
         let reply = GossipReply {
             peers: peers
                 .into_iter()

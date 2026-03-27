@@ -8,10 +8,10 @@ use crate::otel::init_otel;
 
 use crate::cli::Args;
 use crate::gossiper::Gossiper;
-use crate::leslie::Leslie;
 use crate::leslie::gossip::GossipRequest;
 use crate::leslie::gossip::gossip_client::GossipClient;
 use crate::leslie::gossip::gossip_server::GossipServer;
+use crate::leslie::{AppState, ClusterState, IdentityState, MetricsState};
 
 pub mod cli;
 pub mod gossiper;
@@ -22,12 +22,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init logs and metrics
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    let leslie = Arc::new(Leslie::new(args.id.clone()));
-    init_otel(&leslie)?;
+    let identity = Arc::new(IdentityState::new(args.id.clone()));
+    let cluster = Arc::new(ClusterState::new());
+    let metrics = Arc::new(MetricsState::new());
+    let app_state = Arc::new(AppState {
+        identity: identity.clone(),
+        cluster: cluster.clone(),
+        metrics: metrics.clone(),
+    });
 
+    init_otel(&app_state)?;
 
     let addr = format!("{}:{}", args.hostname, args.port).parse()?;
-    info!("Starting node {} on {:?}", leslie.node_id, addr);
+    info!("Starting node {} on {:?}", identity.node_id, addr);
 
     if let Some(connect_addr) = &args.connect {
         hello_to_seed_peer(
@@ -38,14 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     tokio::spawn(Gossiper::new(
-        leslie.clone(),
+        app_state.clone(),
         args.id.clone(),
         format!("{}:{}", args.hostname.clone(), args.port),
         Duration::from_secs(5),
     ));
 
     Server::builder()
-        .add_service(GossipServer::from_arc(leslie))
+        .add_service(GossipServer::from_arc(app_state))
         .serve_with_shutdown(addr, shutdown_signal())
         .await?;
 
