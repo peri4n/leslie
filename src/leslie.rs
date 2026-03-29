@@ -9,21 +9,25 @@ use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 use tracing::info;
 
-use crate::leslie::gossip::{GossipReply, GossipRequest, gossip_server::Gossip};
+use crate::leslie::clusterinfo::{
+    DeregisterReply, DeregisterRequest, RegisterReply, RegisterRequest, ShareReply, ShareRequest,
+    cluster_info_server::ClusterInfo,
+};
 
-pub mod gossip {
-    tonic::include_proto!("gossip");
+pub mod clusterinfo {
+    tonic::include_proto!("clusterinfo");
 }
 
 /// Identity (immutable) state
 #[derive(Debug, Clone)]
 pub struct IdentityState {
     pub node_id: String,
+    pub address: SocketAddr,
 }
 
 impl IdentityState {
-    pub fn new(node_id: String) -> Self {
-        Self { node_id }
+    pub fn new(node_id: String, address: SocketAddr) -> Self {
+        Self { node_id, address }
     }
 }
 
@@ -43,8 +47,14 @@ impl ClusterState {
     pub async fn add_peer(&self, node_id: String, address: SocketAddr) {
         self.peers.write().await.insert(node_id, address);
     }
-    pub async fn snapshot_peers(&self) -> HashMap<String, SocketAddr> {
-        self.peers.read().await.clone()
+    pub async fn snapshot_peers(&self) -> HashMap<String, String> {
+        self.peers
+            .read()
+            .await
+            .clone()
+            .into_iter()
+            .map(|(id, addr)| (id, addr.to_string()))
+            .collect()
     }
     pub async fn list_addresses(&self) -> Vec<SocketAddr> {
         let map = self.peers.read().await;
@@ -79,11 +89,8 @@ pub struct AppState {
 }
 
 #[tonic::async_trait]
-impl Gossip for AppState {
-    async fn gossip(
-        &self,
-        request: Request<GossipRequest>,
-    ) -> Result<Response<GossipReply>, Status> {
+impl ClusterInfo for AppState {
+    async fn share(&self, request: Request<ShareRequest>) -> Result<Response<ShareReply>, Status> {
         // Simple metric: count gossip requests
         let meter = opentelemetry::global::meter("leslie");
         let counter = meter
@@ -92,7 +99,7 @@ impl Gossip for AppState {
             .init();
         counter.add(1, &[]);
 
-        info!("Received gossip request: {:?}", request);
+        info!("Received share request: {:?}", request);
         let incoming = request.into_inner();
         if !incoming.node_id.is_empty() && !incoming.address.is_empty() {
             let addr = incoming
@@ -101,13 +108,37 @@ impl Gossip for AppState {
                 .map_err(|e| Status::invalid_argument(format!("Invalid address: {}", e)))?;
             self.cluster.add_peer(incoming.node_id, addr).await;
         }
-        let peers = self.cluster.snapshot_peers().await;
-        let reply = GossipReply {
-            peers: peers
-                .into_iter()
-                .map(|(id, addr)| (id, addr.to_string()))
-                .collect(),
+        let reply = ShareReply {
+            peers: self.cluster.snapshot_peers().await,
         };
         Ok(Response::new(reply))
+    }
+
+    async fn register(
+        &self,
+        request: Request<RegisterRequest>,
+    ) -> Result<Response<RegisterReply>, Status> {
+        let incoming = request.into_inner();
+        let addr = incoming
+            .address
+            .parse()
+            .map_err(|e| Status::invalid_argument(format!("Invalid address: {}", e)))?;
+        self.cluster.add_peer(incoming.node_id, addr).await;
+        let reply = RegisterReply {
+            peers: self.cluster.snapshot_peers().await,
+        };
+        Ok(Response::new(reply))
+    }
+
+    async fn deregister(
+        &self,
+        request: Request<DeregisterRequest>,
+    ) -> Result<Response<DeregisterReply>, Status> {
+        let incoming = request.into_inner();
+        {
+            let mut peers = self.cluster.peers.write().await;
+            peers.remove(&incoming.node_id);
+        }
+        Ok(Response::new(DeregisterReply { ok: true }))
     }
 }

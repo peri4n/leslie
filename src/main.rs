@@ -8,9 +8,10 @@ use crate::otel::init_otel;
 
 use crate::cli::Args;
 use crate::gossiper::Gossiper;
-use crate::leslie::gossip::GossipRequest;
-use crate::leslie::gossip::gossip_client::GossipClient;
-use crate::leslie::gossip::gossip_server::GossipServer;
+use crate::leslie::clusterinfo::DeregisterRequest;
+use crate::leslie::clusterinfo::RegisterRequest;
+use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
+use crate::leslie::clusterinfo::cluster_info_server::ClusterInfoServer;
 use crate::leslie::{AppState, ClusterState, IdentityState, MetricsState};
 
 pub mod cli;
@@ -22,7 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init logs and metrics
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    let identity = Arc::new(IdentityState::new(args.id.clone()));
+    let addr = format!("{}:{}", args.hostname, args.port).parse()?;
+    let identity = Arc::new(IdentityState::new(args.id.clone(), addr));
     let cluster = Arc::new(ClusterState::new());
     let metrics = Arc::new(MetricsState::new());
     let app_state = Arc::new(AppState {
@@ -44,16 +46,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    tokio::spawn(Gossiper::new(
-        app_state.clone(),
-        args.id.clone(),
-        format!("{}:{}", args.hostname.clone(), args.port),
-        Duration::from_secs(5),
-    ));
+    tokio::spawn(Gossiper::new(app_state.clone(), Duration::from_secs(5)));
 
     Server::builder()
-        .add_service(GossipServer::from_arc(app_state))
-        .serve_with_shutdown(addr, shutdown_signal())
+        .add_service(ClusterInfoServer::from_arc(app_state.clone()))
+        .serve_with_shutdown(
+            addr,
+            shutdown_signal(identity.node_id.clone(), app_state.clone()),
+        )
         .await?;
 
     Ok(())
@@ -62,10 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String) {
     tokio::spawn(async move {
         let target = format!("http://{}", seed_addr);
-        match GossipClient::connect(target.clone()).await {
+        match ClusterInfoClient::connect(target.clone()).await {
             Ok(mut c) => {
                 match c
-                    .gossip(Request::new(GossipRequest {
+                    .register(Request::new(RegisterRequest {
                         node_id: self_id.clone(),
                         address: self_addr.clone(),
                     }))
@@ -74,12 +74,12 @@ pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String)
                     Ok(resp) => {
                         let reply = resp.into_inner();
                         info!(
-                            "hello to seed peer {} success, got peers={:?}",
+                            "register with seed {} success, got peers={:?}",
                             seed_addr, reply.peers
                         );
                     }
                     Err(e) => {
-                        info!("gossip {} failed: {}", seed_addr, e);
+                        info!("register {} failed: {}", seed_addr, e);
                     }
                 }
             }
@@ -90,17 +90,18 @@ pub fn hello_to_seed_peer(seed_addr: String, self_id: String, self_addr: String)
     });
 }
 
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        let mut term = signal(SignalKind::terminate()).expect("sigterm");
-        let mut int = signal(SignalKind::interrupt()).expect("sigint");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {},
-            _ = term.recv() => {},
-            _ = int.recv() => {},
+async fn shutdown_signal(node_id: String, app: Arc<AppState>) {
+    info!("shutdown signal received; deregistering");
+    // Attempt deregister with all known peers
+    let peers = app.cluster.snapshot_peers().await;
+    for addr in peers.values() {
+        let target = format!("http://{}", addr);
+        if let Ok(mut c) = ClusterInfoClient::connect(target.clone()).await {
+            let _ = c
+                .deregister(Request::new(DeregisterRequest {
+                    node_id: node_id.clone(),
+                }))
+                .await;
         }
     }
-    info!("shutdown signal received");
 }

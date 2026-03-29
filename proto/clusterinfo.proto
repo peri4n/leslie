@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package clusterinfo;
+
+service ClusterInfo {
+    // Shares the node's info and receives the current cluster view of the peer
+    rpc Share (ShareRequest) returns (ShareReply);
+
+    // Register this node with a seed cluster on startup
+    rpc Register (RegisterRequest) returns (RegisterReply);
+
+    // Deregister this node on shutdown (removes it from known hosts)
+    rpc Deregister (DeregisterRequest) returns (DeregisterReply);
+}
+
+message ShareRequest {
+    string nodeId = 1;
+    string address = 2;
+
+    // Map of node IDs to their addresses
+    map<string, string> peers = 3;
+}
+
+message ShareReply {
+    // Map of node IDs to their addresses
+    map<string, string> peers = 1;
+}
+
+message RegisterRequest {
+    string nodeId = 1;
+    string address = 2;
+}
+
+message RegisterReply {
+    map<string, string> peers = 1;
+}
+
+message DeregisterRequest {
+    string nodeId = 1;
+}
+
+message DeregisterReply {
+    bool ok = 1;
+}

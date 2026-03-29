@@ -1,5 +1,5 @@
-use crate::leslie::gossip::GossipRequest;
-use crate::leslie::gossip::gossip_client::GossipClient;
+use crate::leslie::clusterinfo::ShareRequest;
+use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -12,18 +12,14 @@ use crate::leslie::AppState;
 
 // Periodic reporter as a Future
 pub struct Gossiper {
-    leslie: Arc<AppState>,
-    self_id: String,
-    self_addr: String,
+    state: Arc<AppState>,
     tick: Interval,
 }
 
 impl Gossiper {
-    pub fn new(leslie: Arc<AppState>, self_id: String, self_addr: String, every: Duration) -> Self {
+    pub fn new(state: Arc<AppState>, every: Duration) -> Self {
         Gossiper {
-            leslie,
-            self_id,
-            self_addr,
+            state,
             tick: interval(every),
         }
     }
@@ -33,23 +29,23 @@ impl Future for Gossiper {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         while self.tick.poll_tick(cx).is_ready() {
-            let leslie = self.leslie.clone();
-            let id = self.self_id.clone();
-            let self_addr = self.self_addr.clone();
+            let state = self.state.clone();
+            let id = state.identity.node_id.clone();
             tokio::spawn(async move {
-                let peer_addrs = leslie.cluster.list_addresses().await;
+                let peer_addrs = state.cluster.list_addresses().await;
                 if peer_addrs.is_empty() {
                     return;
                 }
                 info!("report tick peers={:?}", peer_addrs);
                 for peer_addr in peer_addrs {
                     let target = format!("http://{}", peer_addr);
-                    match GossipClient::connect(target.clone()).await {
+                    match ClusterInfoClient::connect(target.clone()).await {
                         Ok(mut c) => {
                             match c
-                                .gossip(Request::new(GossipRequest {
+                                .share(Request::new(ShareRequest {
                                     node_id: id.clone(),
-                                    address: self_addr.clone(),
+                                    address: state.identity.address.to_string(),
+                                    peers: state.cluster.snapshot_peers().await.into_iter().collect(),
                                 }))
                                 .await
                             {
@@ -58,11 +54,11 @@ impl Future for Gossiper {
                                     for (pid, paddr) in reply.peers {
                                         let response_addr =
                                             paddr.parse().expect("Unable to parse addr");
-                                        leslie.cluster.add_peer(pid, response_addr).await;
+                                        state.cluster.add_peer(pid, response_addr).await;
                                     }
                                 }
                                 Err(e) => {
-                                    info!("gossip {} failed: {}", peer_addr, e);
+                                    info!("share {} failed: {}", peer_addr, e);
                                 }
                             }
                         }
