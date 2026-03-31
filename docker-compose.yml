@@ -1,14 +1,13 @@
 version: "3.9"
 
-services:
-  # Shared defaults for all leslie nodes
-  x-node-common: &node-common
-    image: leslie:latest
-    environment:
-      RUST_LOG: info
-    stop_grace_period: 30s
-    init: true
+x-node-common: &node-common
+  image: leslie:latest
+  environment:
+    RUST_LOG: info
+  stop_grace_period: 30s
+  init: true
 
+services:
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
