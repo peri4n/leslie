@@ -11,6 +11,9 @@ build:
 compose *args='up': build
 	docker compose {{args}}
 
+start:
+  docker compose up
+
 # Build and run N local gossip nodes with shared stdout
 # Positional args are used inside the script ($1..$3)
 simulate n='3' base='50051' host='127.0.0.1':
