@@ -5,6 +5,7 @@ use opentelemetry_prometheus::exporter as otel_prom_exporter;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, TextEncoder};
+use tracing::info;
 use std::net::SocketAddr;
 
 use bytes::Bytes;
@@ -17,6 +18,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 pub fn init_otel(state: &AppState) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Initializing OpenTelemetry metrics");
     let exporter = otel_prom_exporter()
         .with_registry(state.metrics.registry.clone())
         .build()?;

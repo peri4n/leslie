@@ -1,5 +1,6 @@
 use crate::leslie::clusterinfo::ShareRequest;
 use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
+use http::Uri;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -36,15 +37,18 @@ impl Future for Gossiper {
                 if peer_addrs.is_empty() {
                     return;
                 }
-                info!("report tick peers={:?}", peer_addrs);
                 for peer_addr in peer_addrs {
-                    let target = format!("http://{}", peer_addr);
+                    let target = if peer_addr.scheme().is_some() {
+                        peer_addr.to_string()
+                    } else {
+                        format!("http://{}", peer_addr)
+                    };
                     match ClusterInfoClient::connect(target.clone()).await {
                         Ok(mut c) => {
                             match c
                                 .share(Request::new(ShareRequest {
                                     node_id: id.clone(),
-                                    address: state.identity.address.to_string(),
+                                    address: state.identity.public_uri.to_string(),
                                     peers: state.cluster.snapshot_peers().await.into_iter().collect(),
                                 }))
                                 .await
@@ -52,9 +56,9 @@ impl Future for Gossiper {
                                 Ok(resp) => {
                                     let reply = resp.into_inner();
                                     for (pid, paddr) in reply.peers {
-                                        let response_addr =
-                                            paddr.parse().expect("Unable to parse addr");
-                                        state.cluster.add_peer(pid, response_addr).await;
+                                        if let Ok(uri) = paddr.parse::<Uri>() {
+                                            state.cluster.add_peer(pid, uri).await;
+                                        }
                                     }
                                 }
                                 Err(e) => {

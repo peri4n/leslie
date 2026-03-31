@@ -3,13 +3,11 @@ version: "3.9"
 services:
   # Shared defaults for all leslie nodes
   x-node-common: &node-common
-    build: .
+    image: leslie:latest
     environment:
       RUST_LOG: info
     stop_grace_period: 30s
     init: true
-    restart: unless-stopped
-
 
   prometheus:
     image: prom/prometheus:v2.52.0
@@ -25,18 +23,18 @@ services:
 
   node1:
     <<: *node-common
-    command: ["--id", "node1", "--port", "50051"]
+    command: ["--id", "node1", "--hostname", "node1", "--port", "50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
       leslie:
     ports:
       - "50051:50051"
-      - "9141:9464"   # host:container for node1 metrics
+      - "9141:9464"
 
   node2:
     <<: *node-common
-    command: ["--id", "node2", "--port", "50052", "--connect", "node1:50051"]
+    command: ["--id", "node2", "--hostname", "node2", "--port", "50052", "--connect", "node1:50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
@@ -48,7 +46,7 @@ services:
 
   node3:
     <<: *node-common
-    command: ["--id", "node3", "--port", "50053", "--connect", "node1:50051"]
+    command: ["--id", "node3", "--hostname", "node3", "--port", "50053", "--connect", "node1:50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
@@ -60,7 +58,7 @@ services:
 
   node4:
     <<: *node-common
-    command: ["--id", "node4", "--port", "50054", "--connect", "node1:50051"]
+    command: ["--id", "node4", "--hostname", "node4", "--port", "50054", "--connect", "node1:50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:
@@ -72,7 +70,7 @@ services:
 
   node5:
     <<: *node-common
-    command: ["--id", "node5", "--port", "50055", "--connect", "node1:50051"]
+    command: ["--id", "node5", "--hostname", "node5", "--port", "50055", "--connect", "node1:50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:

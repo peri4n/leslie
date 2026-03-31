@@ -20,10 +20,6 @@ COPY build.rs ./
 RUN cargo build --release
 
 FROM debian:bookworm-slim AS runtime
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates netcat-openbsd \
- && rm -rf /var/lib/apt/lists/* \
- && update-ca-certificates
 
 COPY --from=builder /app/target/release/leslie /usr/local/bin/leslie
 

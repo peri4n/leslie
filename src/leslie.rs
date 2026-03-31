@@ -1,9 +1,9 @@
 use prometheus::Registry;
 use std::{
     collections::{HashMap, HashSet},
-    net::SocketAddr,
     sync::Arc,
 };
+use http::Uri;
 use tokio::sync::RwLock;
 
 use tonic::{Request, Response, Status};
@@ -22,19 +22,20 @@ pub mod clusterinfo {
 #[derive(Debug, Clone)]
 pub struct IdentityState {
     pub node_id: String,
-    pub address: SocketAddr,
+    // Bind address for the server
+    pub public_uri: Uri,
 }
 
 impl IdentityState {
-    pub fn new(node_id: String, address: SocketAddr) -> Self {
-        Self { node_id, address }
+    pub fn new(node_id: String, public_uri: Uri) -> Self {
+        Self { node_id, public_uri }
     }
 }
 
 /// Cluster membership and peer data
 #[derive(Debug, Clone)]
 pub struct ClusterState {
-    pub peers: Arc<RwLock<HashMap<String, SocketAddr>>>,
+    pub peers: Arc<RwLock<HashMap<String, Uri>>>,
 }
 
 impl ClusterState {
@@ -44,23 +45,18 @@ impl ClusterState {
         }
     }
 
-    pub async fn add_peer(&self, node_id: String, address: SocketAddr) {
+    pub async fn add_peer(&self, node_id: String, address: Uri) {
         self.peers.write().await.insert(node_id, address);
     }
     pub async fn snapshot_peers(&self) -> HashMap<String, String> {
-        self.peers
-            .read()
-            .await
-            .clone()
-            .into_iter()
-            .map(|(id, addr)| (id, addr.to_string()))
-            .collect()
+        let map: HashMap<String, Uri> = self.peers.read().await.clone();
+        map.into_iter().map(|(id, uri)| (id, uri.to_string())).collect()
     }
-    pub async fn list_addresses(&self) -> Vec<SocketAddr> {
-        let map = self.peers.read().await;
-        let mut set: HashSet<SocketAddr> = HashSet::new();
+    pub async fn list_addresses(&self) -> Vec<Uri> {
+        let map: HashMap<String, Uri> = self.peers.read().await.clone();
+        let mut set: HashSet<Uri> = HashSet::new();
         for addr in map.values() {
-            set.insert(*addr);
+            set.insert(addr.clone());
         }
         set.into_iter().collect()
     }
@@ -102,11 +98,11 @@ impl ClusterInfo for AppState {
         info!("Received share request: {:?}", request);
         let incoming = request.into_inner();
         if !incoming.node_id.is_empty() && !incoming.address.is_empty() {
-            let addr = incoming
+            let uri: Uri = incoming
                 .address
                 .parse()
-                .map_err(|e| Status::invalid_argument(format!("Invalid address: {}", e)))?;
-            self.cluster.add_peer(incoming.node_id, addr).await;
+                .map_err(|e| Status::invalid_argument(format!("Invalid URI: {}", e)))?;
+            self.cluster.add_peer(incoming.node_id, uri).await;
         }
         let reply = ShareReply {
             peers: self.cluster.snapshot_peers().await,
@@ -119,11 +115,11 @@ impl ClusterInfo for AppState {
         request: Request<RegisterRequest>,
     ) -> Result<Response<RegisterReply>, Status> {
         let incoming = request.into_inner();
-        let addr = incoming
+        let uri: Uri = incoming
             .address
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("Invalid address: {}", e)))?;
-        self.cluster.add_peer(incoming.node_id, addr).await;
+            .map_err(|e| Status::invalid_argument(format!("Invalid URI: {}", e)))?;
+        self.cluster.add_peer(incoming.node_id, uri).await;
         let reply = RegisterReply {
             peers: self.cluster.snapshot_peers().await,
         };
@@ -136,7 +132,7 @@ impl ClusterInfo for AppState {
     ) -> Result<Response<DeregisterReply>, Status> {
         let incoming = request.into_inner();
         {
-            let mut peers = self.cluster.peers.write().await;
+            let mut peers: tokio::sync::RwLockWriteGuard<'_, HashMap<String, Uri>> = self.cluster.peers.write().await;
             peers.remove(&incoming.node_id);
         }
         Ok(Response::new(DeregisterReply { ok: true }))

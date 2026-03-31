@@ -19,6 +19,7 @@ hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["server", "http1", "tokio"] }
 http-body-util = "0.1"
 bytes = "1"
+http = "1.4.0"
 
 [build-dependencies]
 tonic-prost-build = "0.14.5"

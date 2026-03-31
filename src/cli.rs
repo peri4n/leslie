@@ -1,4 +1,5 @@
 use clap::Parser;
+use hyper::Uri;
 
 /// Simple program to simulate distributed nodes
 #[derive(Parser, Debug)]
@@ -8,9 +9,9 @@ pub struct Args {
     pub id: String,
 
     #[arg(long)]
-    pub connect: Option<String>,
+    pub connect: Option<Uri>,
 
-    #[arg(long, default_value = "[::1]")]
+    #[arg(long, default_value = "[::]")]
     pub hostname: String,
 
     #[arg(short, long, default_value = "0")]

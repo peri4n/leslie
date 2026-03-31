@@ -1,8 +1,15 @@
 set shell := ["bash", "-cu"]
 set positional-arguments
 
-# Build and run N local gossip nodes with shared stdout
-# Usage: just simulate [n] [base] [host]
+image := "leslie:latest"
+
+# Build the Docker image once
+build:
+	docker build -t {{image}} .
+
+# Build image and bring up the compose cluster
+compose *args='up': build
+	docker compose {{args}}
 
 # Build and run N local gossip nodes with shared stdout
 # Positional args are used inside the script ($1..$3)
