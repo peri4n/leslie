@@ -1,7 +1,11 @@
 use prometheus::Registry;
+use rand::rngs::StdRng;
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use http::Uri;
 use tokio::sync::RwLock;
@@ -24,11 +28,13 @@ pub struct IdentityState {
     pub node_id: String,
     // Bind address for the server
     pub public_uri: Uri,
+    // Seed peer to register with on (re-)join
+    pub seed_uri: Option<Uri>,
 }
 
 impl IdentityState {
-    pub fn new(node_id: String, public_uri: Uri) -> Self {
-        Self { node_id, public_uri }
+    pub fn new(node_id: String, public_uri: Uri, seed_uri: Option<Uri>) -> Self {
+        Self { node_id, public_uri, seed_uri }
     }
 }
 
@@ -60,6 +66,9 @@ impl ClusterState {
         }
         set.into_iter().collect()
     }
+    pub async fn clear_peers(&self) {
+        self.peers.write().await.clear();
+    }
 }
 
 /// Metrics/observability state
@@ -82,6 +91,15 @@ pub struct AppState {
     pub identity: Arc<IdentityState>,
     pub cluster: Arc<ClusterState>,
     pub metrics: Arc<MetricsState>,
+    pub alive: Arc<AtomicBool>,
+    /// Shared deterministic RNG, seeded via --rng-seed
+    pub rng: Arc<Mutex<StdRng>>,
+}
+
+impl AppState {
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Relaxed)
+    }
 }
 
 #[tonic::async_trait]
