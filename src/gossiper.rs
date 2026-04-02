@@ -31,6 +31,12 @@ impl Future for Gossiper {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         while self.tick.poll_tick(cx).is_ready() {
             let state = self.state.clone();
+
+            // Skip gossip if node is "dead"
+            if !state.is_alive() {
+                continue;
+            }
+
             let id = state.identity.node_id.clone();
             tokio::spawn(async move {
                 let peer_addrs = state.cluster.list_addresses().await;

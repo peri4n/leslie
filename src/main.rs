@@ -1,14 +1,17 @@
 use clap::Parser;
-use http::uri::Scheme;
 use hyper::Uri;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tokio::time::Duration;
 use tonic::{Request, transport::Server};
 use tracing::info;
 mod otel;
 use crate::otel::init_otel;
 
+use crate::chaos::{ChaosLayer, spawn_chaos_task};
 use crate::cli::Args;
 use crate::gossiper::Gossiper;
 use crate::leslie::clusterinfo::DeregisterRequest;
@@ -17,6 +20,7 @@ use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
 use crate::leslie::clusterinfo::cluster_info_server::ClusterInfoServer;
 use crate::leslie::{AppState, ClusterState, IdentityState, MetricsState};
 
+pub mod chaos;
 pub mod cli;
 pub mod gossiper;
 pub mod leslie;
@@ -35,13 +39,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Public URI other peers should use to reach this leslie process
     let public_uri: Uri = format!("http://{}:{}", args.hostname, args.port).parse()?;
-    let identity = Arc::new(IdentityState::new(args.id.clone(), public_uri.clone()));
+    let identity = Arc::new(IdentityState::new(
+        args.id.clone(),
+        public_uri.clone(),
+        args.connect.clone(),
+    ));
     let cluster = Arc::new(ClusterState::new());
     let metrics = Arc::new(MetricsState::new());
+    let alive = Arc::new(AtomicBool::new(true));
+    let rng = match args.rng_seed {
+        Some(seed) => {
+            info!("Using deterministic RNG with seed={}", seed);
+            StdRng::seed_from_u64(seed)
+        }
+        None => StdRng::from_os_rng(),
+    };
     let app_state = Arc::new(AppState {
         identity: identity.clone(),
         cluster: cluster.clone(),
         metrics: metrics.clone(),
+        alive: alive.clone(),
+        rng: Arc::new(Mutex::new(rng)),
     });
 
     init_otel(&app_state)?;
@@ -57,9 +75,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(Gossiper::new(app_state.clone(), Duration::from_secs(5)));
 
+    // Spawn chaos background task (no-op when crash_probability == 0)
+    spawn_chaos_task(
+        app_state.clone(),
+        args.crash_probability,
+        Duration::from_secs(args.recovery_time),
+    );
+
     let server_addr = format!("[::]:{}", args.port).parse()?;
     info!("Node {} started listening on {:?}", identity.node_id, server_addr);
     Server::builder()
+        .layer(ChaosLayer::new(alive))
         .add_service(ClusterInfoServer::from_arc(app_state.clone()))
         .serve_with_shutdown(
             server_addr,
