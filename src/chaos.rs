@@ -12,7 +12,7 @@ use tower_service::Service;
 use tracing::info;
 
 use crate::hello_to_seed_peer;
-use crate::leslie::AppState;
+use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
 // Tower layer: simulate timeout when node is "dead"

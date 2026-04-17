@@ -22,6 +22,7 @@ services:
 
   node1:
     <<: *node-common
+    build: .
     command: ["--id", "node1", "--hostname", "node1", "--port", "50051"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
@@ -33,7 +34,7 @@ services:
 
   node2:
     <<: *node-common
-    command: ["--id", "node2", "--hostname", "node2", "--port", "50052", "--connect", "node1:50051"]
+    command: ["--id", "node2", "--hostname", "node2", "--port", "50052", "--connect", "node1:50051", "--crash-probability", "0.5"]
     environment:
       PROMETHEUS_BIND: 0.0.0.0:9464
     networks:

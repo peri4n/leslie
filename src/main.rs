@@ -13,17 +13,16 @@ use crate::otel::init_otel;
 
 use crate::chaos::{ChaosLayer, spawn_chaos_task};
 use crate::cli::Args;
-use crate::gossiper::Gossiper;
-use crate::leslie::clusterinfo::DeregisterRequest;
-use crate::leslie::clusterinfo::RegisterRequest;
-use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
-use crate::leslie::clusterinfo::cluster_info_server::ClusterInfoServer;
-use crate::leslie::{AppState, ClusterState, IdentityState, MetricsState};
+use crate::services::clusterinfo::proto::{DeregisterRequest, RegisterRequest};
+use crate::services::clusterinfo::proto::cluster_info_client::ClusterInfoClient;
+use crate::services::clusterinfo::proto::cluster_info_server::ClusterInfoServer;
+use crate::services::clusterinfo::task::ClusterInfoTask;
+use crate::state::{AppState, ClusterState, IdentityState, MetricsState};
 
 pub mod chaos;
 pub mod cli;
-pub mod gossiper;
-pub mod leslie;
+pub mod state;
+pub mod services;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public_uri.clone(),
         args.connect.clone(),
     ));
+
     let cluster = Arc::new(ClusterState::new());
     let metrics = Arc::new(MetricsState::new());
     let alive = Arc::new(AtomicBool::new(true));
@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => StdRng::from_os_rng(),
     };
+
     let app_state = Arc::new(AppState {
         identity: identity.clone(),
         cluster: cluster.clone(),
@@ -73,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     };
 
-    tokio::spawn(Gossiper::new(app_state.clone(), Duration::from_secs(5)));
+    tokio::spawn(ClusterInfoTask::new(app_state.clone(), Duration::from_secs(5)));
 
     // Spawn chaos background task (no-op when crash_probability == 0)
     spawn_chaos_task(
