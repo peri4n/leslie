@@ -1,4 +1,4 @@
-use crate::leslie::AppState;
+use crate::state::AppState;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry_prometheus::exporter as otel_prom_exporter;

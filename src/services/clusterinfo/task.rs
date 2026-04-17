@@ -1,5 +1,3 @@
-use crate::leslie::clusterinfo::ShareRequest;
-use crate::leslie::clusterinfo::cluster_info_client::ClusterInfoClient;
 use http::Uri;
 use std::future::Future;
 use std::pin::Pin;
@@ -9,24 +7,25 @@ use tokio::time::{Duration, Interval, interval};
 use tonic::Request;
 use tracing::info;
 
-use crate::leslie::AppState;
+use crate::services::clusterinfo::proto::ShareRequest;
+use crate::services::clusterinfo::proto::cluster_info_client::ClusterInfoClient;
+use crate::state::AppState;
 
-// Periodic reporter as a Future
-pub struct Gossiper {
+pub struct ClusterInfoTask {
     state: Arc<AppState>,
     tick: Interval,
 }
 
-impl Gossiper {
+impl ClusterInfoTask {
     pub fn new(state: Arc<AppState>, every: Duration) -> Self {
-        Gossiper {
+        ClusterInfoTask {
             state,
             tick: interval(every),
         }
     }
 }
 
-impl Future for Gossiper {
+impl Future for ClusterInfoTask {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         while self.tick.poll_tick(cx).is_ready() {
