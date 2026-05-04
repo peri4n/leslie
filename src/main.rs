@@ -1,5 +1,8 @@
 use clap::Parser;
 use hyper::Uri;
+use opentelemetry::global;
+use opentelemetry::propagation::TextMapPropagator;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::net::SocketAddr;
@@ -8,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tokio::time::Duration;
 use tonic::{Request, transport::Server};
 use tracing::info;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 mod otel;
 use crate::otel::init_otel;
 
@@ -26,8 +30,8 @@ pub mod services;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // init logs and metrics
-    tracing_subscriber::fmt::init();
+    // Set W3C TraceContext as the global propagator for cross-service context
+    global::set_text_map_propagator(TraceContextPropagator::new());
 
     // parse command line arguments
     let args = Args::parse();
@@ -94,11 +98,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
+    // Flush pending traces before exit
+    global::shutdown_tracer_provider();
+
     Ok(())
 }
 
 pub fn hello_to_seed_peer(seed_uri: Uri, self_id: String, self_uri: Uri) {
-    tokio::spawn(async move {
+    let span = tracing::info_span!("register_to_seed", node_id = %self_id, seed = %seed_uri);
+    tokio::spawn(tracing::Instrument::instrument(async move {
         // Accept either a bare host:port or a full URI.
         let target = if seed_uri.scheme_str() == Some("http") {
             seed_uri.to_string()
@@ -108,12 +116,12 @@ pub fn hello_to_seed_peer(seed_uri: Uri, self_id: String, self_uri: Uri) {
 
         match ClusterInfoClient::connect(target.clone()).await {
             Ok(mut c) => {
-                match c
-                    .register(Request::new(RegisterRequest {
-                        node_id: self_id.clone(),
-                        address: self_uri.to_string(),
-                    }))
-                    .await
+                let mut req = Request::new(RegisterRequest {
+                    node_id: self_id.clone(),
+                    address: self_uri.to_string(),
+                });
+                inject_trace_context(&mut req);
+                match c.register(req).await
                 {
                     Ok(resp) => {
                         let reply = resp.into_inner();
@@ -131,7 +139,7 @@ pub fn hello_to_seed_peer(seed_uri: Uri, self_id: String, self_uri: Uri) {
                 info!("connect {} failed: {}", target, e);
             }
         }
-    });
+    }, span));
 }
 
 async fn shutdown_signal(node_id: String, app: Arc<AppState>) {
@@ -142,11 +150,11 @@ async fn shutdown_signal(node_id: String, app: Arc<AppState>) {
     for uri in peers.values() {
         let target = uri.clone();
         if let Ok(mut c) = ClusterInfoClient::connect(target.clone()).await {
-            let _ = c
-                .deregister(Request::new(DeregisterRequest {
-                    node_id: node_id.clone(),
-                }))
-                .await;
+            let mut req = Request::new(DeregisterRequest {
+                node_id: node_id.clone(),
+            });
+            inject_trace_context(&mut req);
+            let _ = c.deregister(req).await;
         }
     }
 }
@@ -158,4 +166,56 @@ async fn wait_for_shutdown() {
         _ = tokio::signal::ctrl_c() => {},
         _ = sigterm.recv() => {},
     }
+}
+
+// ── Trace context propagation for outgoing gRPC calls ───────────────────
+
+/// Carrier that writes into `tonic::metadata::MetadataMap`.
+struct MetadataInjector<'a>(&'a mut tonic::metadata::MetadataMap);
+
+impl opentelemetry::propagation::Injector for MetadataInjector<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(k) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
+            if let Ok(v) = value.parse() {
+                self.0.insert(k, v);
+            }
+        }
+    }
+}
+
+/// Inject the current span's trace context into a `tonic::Request` so the
+/// remote side can continue the same trace.
+pub fn inject_trace_context<T>(req: &mut Request<T>) {
+    let cx = tracing::Span::current().context();
+    let propagator = TraceContextPropagator::new();
+    propagator.inject_context(&cx, &mut MetadataInjector(req.metadata_mut()));
+}
+
+// ── Trace context extraction from incoming gRPC calls ───────────────────
+
+/// Carrier that reads from `tonic::metadata::MetadataMap`.
+struct MetadataExtractor<'a>(&'a tonic::metadata::MetadataMap);
+
+impl opentelemetry::propagation::Extractor for MetadataExtractor<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|v| v.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0
+            .keys()
+            .filter_map(|k| match k {
+                tonic::metadata::KeyRef::Ascii(key) => Some(key.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Extract trace context from incoming `tonic::Request` metadata and set it
+/// as parent on the current span, linking the server span to the client trace.
+pub fn extract_trace_context<T>(req: &Request<T>) {
+    let propagator = TraceContextPropagator::new();
+    let parent_cx = propagator.extract(&MetadataExtractor(req.metadata()));
+    tracing::Span::current().set_parent(parent_cx);
 }

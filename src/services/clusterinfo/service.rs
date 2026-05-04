@@ -2,14 +2,18 @@ use std::collections::HashMap;
 
 use http::Uri;
 use tonic::{Request, Response, Status, async_trait};
-use tracing::info;
+use tracing::{info, instrument};
 
+use crate::extract_trace_context;
 use crate::{services::clusterinfo::proto::{DeregisterReply, DeregisterRequest, RegisterReply, RegisterRequest, ShareReply, ShareRequest, cluster_info_server::ClusterInfo}, state::AppState};
 
 
 #[async_trait]
 impl ClusterInfo for AppState {
+    #[instrument(skip(self, request), fields(rpc = "ClusterInfo/Share"))]
     async fn share(&self, request: Request<ShareRequest>) -> Result<Response<ShareReply>, Status> {
+        extract_trace_context(&request);
+
         // Simple metric: count gossip requests
         let meter = opentelemetry::global::meter("leslie");
         let counter = meter
@@ -33,10 +37,13 @@ impl ClusterInfo for AppState {
         Ok(Response::new(reply))
     }
 
+    #[instrument(skip(self, request), fields(rpc = "ClusterInfo/Register"))]
     async fn register(
         &self,
         request: Request<RegisterRequest>,
     ) -> Result<Response<RegisterReply>, Status> {
+        extract_trace_context(&request);
+
         let incoming = request.into_inner();
         let uri: Uri = incoming
             .address
@@ -49,10 +56,13 @@ impl ClusterInfo for AppState {
         Ok(Response::new(reply))
     }
 
+    #[instrument(skip(self, request), fields(rpc = "ClusterInfo/Deregister"))]
     async fn deregister(
         &self,
         request: Request<DeregisterRequest>,
     ) -> Result<Response<DeregisterReply>, Status> {
+        extract_trace_context(&request);
+
         let incoming = request.into_inner();
         {
             let mut peers: tokio::sync::RwLockWriteGuard<'_, HashMap<String, Uri>> = self.cluster.peers.write().await;
