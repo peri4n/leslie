@@ -5,8 +5,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::time::{Duration, Interval, interval};
 use tonic::Request;
-use tracing::info;
+use tracing::{Instrument, info, info_span};
 
+use crate::inject_trace_context;
 use crate::services::clusterinfo::proto::ShareRequest;
 use crate::services::clusterinfo::proto::cluster_info_client::ClusterInfoClient;
 use crate::state::AppState;
@@ -37,6 +38,7 @@ impl Future for ClusterInfoTask {
             }
 
             let id = state.identity.node_id.clone();
+            let gossip_span = info_span!("gossip_round", node_id = %id);
             tokio::spawn(async move {
                 let peer_addrs = state.cluster.list_addresses().await;
                 if peer_addrs.is_empty() {
@@ -50,13 +52,13 @@ impl Future for ClusterInfoTask {
                     };
                     match ClusterInfoClient::connect(target.clone()).await {
                         Ok(mut c) => {
-                            match c
-                                .share(Request::new(ShareRequest {
-                                    node_id: id.clone(),
-                                    address: state.identity.public_uri.to_string(),
-                                    peers: state.cluster.snapshot_peers().await.into_iter().collect(),
-                                }))
-                                .await
+                            let mut req = Request::new(ShareRequest {
+                                node_id: id.clone(),
+                                address: state.identity.public_uri.to_string(),
+                                peers: state.cluster.snapshot_peers().await.into_iter().collect(),
+                            });
+                            inject_trace_context(&mut req);
+                            match c.share(req).await
                             {
                                 Ok(resp) => {
                                     let reply = resp.into_inner();
@@ -76,7 +78,7 @@ impl Future for ClusterInfoTask {
                         }
                     }
                 }
-            });
+            }.instrument(gossip_span));
         }
         Poll::Pending
     }
