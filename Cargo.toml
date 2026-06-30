@@ -15,7 +15,7 @@ opentelemetry = { version = "0.23", features = ["metrics", "trace"] }
 opentelemetry-prometheus = "0.16"
 opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] }
 prometheus = "0.13"
-opentelemetry_sdk = { version = "0.23.0", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.24"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["server", "http1", "tokio"] }
